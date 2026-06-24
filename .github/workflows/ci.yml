@@ -7,21 +7,42 @@ on:
 
 jobs:
   build:
-
     runs-on: ubuntu-latest
 
     steps:
-
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-
-      - name: Install Dependencies
-        run: npm install
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Build Docker Image
-        run: docker build -t devops-portfolio .
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: false
+          tags: devops-portfolio:${{ github.sha }},devops-portfolio:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          load: true
+
+      - name: Test Docker Container
+        run: |
+          docker run --rm -d -p 3000:3000 --name test-app devops-portfolio:latest
+          sleep 2
+          curl -f http://localhost:3000 || exit 1
+          docker stop test-app
+
+      - name: Scan Image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: devops-portfolio:latest
+          format: sarif
+          output: trivy-results.sarif
+          exit-code: 0
+
+      - name: Upload Trivy Results
+        uses: github/codeql-action/upload-sarif@v2
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
